@@ -6,9 +6,6 @@ on:
     paths:
       - 'app/**'
       - '.github/workflows/app-cd.yml'
-      - 'package*.json'
-      - 'Dockerfile'
-      - '!infra/**'  # Exclude infra changes
 
 permissions:
   id-token: write
