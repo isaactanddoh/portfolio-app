@@ -21,6 +21,12 @@ updates:
       - "status-success=build"
       - "status-success=security"
     version-requirement-updates: "increase"
+    # Security updates configuration
+    security-updates: true
+    ignore:
+      # Ignore updates that would introduce vulnerabilities
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
 
   # GitHub Actions updates
   - package-ecosystem: "github-actions"
