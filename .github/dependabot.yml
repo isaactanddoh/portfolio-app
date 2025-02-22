@@ -13,6 +13,14 @@ updates:
     commit-message:
       prefix: "npm"
       include: "scope"
+    target-branch: "dev"
+    # Auto-merge configuration
+    auto-merge: true
+    auto-merge-conditions:
+      - "status-success=test"
+      - "status-success=build"
+      - "status-success=security"
+    version-requirement-updates: "increase"
 
   # GitHub Actions updates
   - package-ecosystem: "github-actions"
@@ -27,3 +35,10 @@ updates:
     commit-message:
       prefix: "github-actions"
       include: "scope"
+    target-branch: "dev"
+    # Auto-merge configuration
+    auto-merge: true
+    auto-merge-conditions:
+      - "status-success=test"
+      - "status-success=build"
+    version-requirement-updates: "increase"
