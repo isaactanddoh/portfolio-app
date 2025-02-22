@@ -48,7 +48,7 @@ jobs:
           echo "tags=${{ steps.login-ecr.outputs.registry }}/portfolio-app:$ENVIRONMENT-$GIT_SHA-$TIMESTAMP" >> $GITHUB_OUTPUT
       
       - name: Build Image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./app
           file: ./app/Dockerfile
