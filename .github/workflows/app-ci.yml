@@ -6,6 +6,12 @@ on:
     paths:
       - 'app/**'
       - '.github/workflows/app-ci.yml'
+      - 'package*.json'
+      - 'Dockerfile'
+    paths-ignore:
+      - '**/.github/dependabot.yml'
+      - '**/README.md'
+      - 'infra/**'
 
 permissions:
   id-token: write
