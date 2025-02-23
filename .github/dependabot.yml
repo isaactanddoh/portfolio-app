@@ -5,32 +5,9 @@ updates:
     directory: "/app"
     schedule:
       interval: "weekly"
-      day: "monday"
-    labels:
-      - "npm"
-      - "dependencies"
-    commit-message:
-      prefix: "npm"
-      include: "scope"
-    version-requirement-updates: "increase"
-
-    # Security updates configuration
-    security-updates: true
-    ignore:
-      # Ignore updates that would introduce vulnerabilities
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
 
   # GitHub Actions updates
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
-    labels:
-      - "github-actions"
-      - "dependencies"
-    commit-message:
-      prefix: "github-actions"
-      include: "scope"
-    version-requirement-updates: "increase"

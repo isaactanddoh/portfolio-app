@@ -4,17 +4,13 @@ on:
   pull_request:
     branches: [ dev, staging, main ]
     paths:
-      - 'src/**'
-      - 'tests/**'
-      - 'public/**'
-      - '.github/workflows/app-ci.yml'
-      - 'package*.json'
-      - 'sonar-project.properties'
-    paths-ignore:
-      - '.github/dependabot.yml'
-      - 'README.md'
-      - '.gitignore'
-      - '.dockerignore'
+      - src/**
+      - tests/**
+      - public/**
+      - .github/workflows/app-ci.yml
+      - package*.json
+      - sonar-project.properties
+      - '!.github/dependabot.yml'
 
 permissions:
   id-token: write

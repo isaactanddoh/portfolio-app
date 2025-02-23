@@ -4,16 +4,12 @@ on:
   push:
     branches: [ dev, staging, main ]
     paths:
-      - 'app/**'
-      - '.github/workflows/app-cd.yml'
-      - 'Dockerfile'
-      - '.dockerignore'
-    paths-ignore:
-      - '.github/dependabot.yml'
-      - 'README.md'
-      - '.gitignore'
-      - '.dockerignore'
-
+      - app/**
+      - .github/workflows/app-cd.yml
+      - Dockerfile
+      - .dockerignore
+      - '!.github/dependabot.yml'
+      
 permissions:
   id-token: write
   contents: read
