@@ -11,7 +11,7 @@ on:
       - .github/workflows/app-ci.yml
       - package*.json
       - sonar-project.properties
-      - Dockerfile
+      - '!Dockerfile'
       - '!.github/dependabot.yml'
 
 permissions:
