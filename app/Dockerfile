@@ -4,14 +4,14 @@ FROM node:20-alpine AS builder
 # Set working directory
 WORKDIR /usr/src/app
 
-# Copy package files
-COPY package*.json ./
-
 # Install dependencies
-RUN rm -rf node_modules && npm ci
+RUN npm install && npm ci
 
 # Run npm audit fix
 RUN npm audit fix --force
+
+# Copy package files
+COPY package*.json ./
 
 # Copy application code
 COPY . . 
