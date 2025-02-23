@@ -118,39 +118,3 @@ jobs:
           text: "Deployment to ${{ github.ref_name }} environment ${{ job.status }}!"
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-      - name: Create Security Issue for Vulnerabilities
-        if: ${{ failure() }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const issueBody = `
-            ## Security Vulnerability Detected
-
-            Package: cross-spawn
-            Current Version: 7.0.3
-            Fixed Version: 7.0.5
-            CVE: CVE-2024-21538
-            Severity: HIGH
-
-            ### Description
-            Regular expression denial of service vulnerability in cross-spawn package.
-
-            ### Remediation Steps
-            1. Update package.json to use cross-spawn version 7.0.5
-            2. Run npm update
-            3. Verify fix with security scan
-
-            ### Scan Results
-            \`\`\`
-            ${process.env.SCAN_RESULTS}
-            \`\`\`
-            `;
-
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: 'VULN: cross-spawn package (CVE-2024-21538)',
-              body: issueBody,
-              labels: ['security', 'vulnerability', 'high']
-            }); 
