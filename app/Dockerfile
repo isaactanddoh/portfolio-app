@@ -11,8 +11,6 @@ COPY package*.json ./
 RUN npm ci && \
     npm cache clean --force
 
-RUN npm run build
-
 # Copy application code
 COPY . .
 
