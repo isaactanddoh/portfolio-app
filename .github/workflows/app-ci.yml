@@ -4,12 +4,6 @@ on:
   pull_request:
     branches: [ dev, staging, main ]
     paths:
-      - src/**
-      - tests/**
-      - public/**
-      - .github/workflows/app-ci.yml
-      - package*.json
-      - sonar-project.properties
       - '!.github/dependabot.yml'
 
 permissions:
@@ -45,7 +39,9 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Install Dependencies
-        run: npm ci
+        run: |
+          npm install
+          npm ci
         
       - name: Run npm audit
         run: |
