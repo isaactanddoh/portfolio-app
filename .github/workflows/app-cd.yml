@@ -4,12 +4,8 @@ on:
   push:
     branches: [ dev, staging, main ]
     paths:
-      - app/**
-      - .github/workflows/app-cd.yml
-      - Dockerfile
-      - .dockerignore
       - '!.github/dependabot.yml'
-      
+
 permissions:
   id-token: write
   contents: read
@@ -22,7 +18,6 @@ jobs:
         working-directory: app  # Set the working directory to app folder
     environment:
       name: ${{ github.ref_name }}
-
     
     steps:
       - uses: actions/checkout@v4
