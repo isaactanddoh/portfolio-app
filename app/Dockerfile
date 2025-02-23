@@ -7,8 +7,11 @@ WORKDIR /usr/src/app
 # Copy package files first for better caching
 COPY package*.json ./
 
+# Remove package-lock.json
+RUN rm -f package-lock.json
+
 # Install dependencies with exact versions and clean npm cache
-RUN npm ci && \
+RUN npm install && \
     npm cache clean --force
 
 # Copy application code
