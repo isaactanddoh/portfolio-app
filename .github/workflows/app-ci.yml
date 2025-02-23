@@ -13,6 +13,7 @@ on:
       - sonar-project.properties
       - '!Dockerfile'
       - '!.github/dependabot.yml'
+      - '!.github/workflows/app-cd.yml'
 
 permissions:
   id-token: write
