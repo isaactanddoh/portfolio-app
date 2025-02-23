@@ -73,6 +73,7 @@ jobs:
           file: ./app/Dockerfile
           load: true
           tags: ${{ steps.tags.outputs.tags }}
+          no-cache: true
           
       - name: Scan Image with Trivy
         uses: aquasecurity/trivy-action@master
