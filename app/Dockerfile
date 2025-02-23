@@ -8,11 +8,13 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci
+RUN rm -rf node_modules && npm ci
+
+# Run npm audit fix
+RUN npm audit fix --force
 
 # Copy application code
 COPY . . 
-
 
 # Production stage
 FROM node:20-alpine
