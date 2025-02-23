@@ -18,7 +18,7 @@ COPY . .
 FROM node:20-alpine AS production
 
 # Install dumb-init for proper process handling
-RUN apk add --no-cache dumb-init=1.2.5-r2 && \
+RUN apk add --no-cache dumb-init && \
     addgroup -S nodejs && \
     adduser -S nodejsuser -G nodejs
 
