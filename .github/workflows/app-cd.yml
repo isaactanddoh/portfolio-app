@@ -39,7 +39,7 @@ jobs:
         with:
           node-version: '22.x'
           cache: 'npm'
-
+          cache-dependency-path: '**/package-lock.json'
   
       # Explicitly handle npm caching
       - name: Cache npm dependencies
