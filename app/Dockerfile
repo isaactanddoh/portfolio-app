@@ -8,11 +8,11 @@ WORKDIR /usr/src/app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install && npm ci
+RUN npm ci
 
 # Copy application code
-COPY src/ ./src/
-COPY public/ ./public/
+COPY . . 
+
 
 # Production stage
 FROM node:20-alpine
