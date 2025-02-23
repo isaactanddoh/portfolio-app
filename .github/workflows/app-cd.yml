@@ -57,13 +57,12 @@ jobs:
           load: true
           tags: ${{ steps.tags.outputs.tags }}
           no-cache: true
-          cache-from: type=gha
-          
+
       - name: Scan Image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.tags.outputs.tags }}
-          format: 'table'
+          format: 'json'
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: 'os,library'
