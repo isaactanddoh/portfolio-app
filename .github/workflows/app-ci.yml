@@ -48,8 +48,6 @@ jobs:
         run: |
           npm install npm-force-resolutions --save-dev
 
-
-
       - name: Run npm audit
         run: |
           npm audit --json > npm-audit-report.json || true
@@ -70,15 +68,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
-          projectBaseDir: app
+          projectBaseDir: .
           args: >
             -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
             -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
             -Dsonar.sources=src
             -Dsonar.tests=tests
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
-            -Dsonar.exclusions=**/node_modules/**,**/coverage/**,**/public/**
-            -Dsonar.coverage.exclusions=**/public/**
+            -Dsonar.exclusions=node_modules/**,coverage/**,public/**
+            -Dsonar.coverage.exclusions=public/**
             -Dsonar.verbose=true
         
       - name: Run Snyk Security Scan
@@ -86,13 +84,13 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          args: --file=app/package.json
+          args: --file=package.json
           
       - name: Run OWASP Dependency Check
         uses: dependency-check/Dependency-Check_Action@main
         with:
           project: 'portfolio-app'
-          path: 'app'
+          path: '.'
           format: 'HTML'
           out: 'reports'  # Specify output directory
 
