@@ -48,8 +48,7 @@ jobs:
         run: |
           npm install npm-force-resolutions --save-dev
           npm install
-          npx npm-force-resolutions
-          npm install
+
 
       - name: Run npm audit
         run: |
