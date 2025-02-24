@@ -87,7 +87,7 @@ jobs:
         id: update-task
         run: |
           # Get current task definition
-          TASK_FAMILY="${{ secrets.TASK_FAMILY }}"
+          TASK_FAMILY="${{ secrets.ECS_FAMILY }}"
           CONTAINER_NAME="${{ secrets.CONTAINER_NAME }}"
 
 
