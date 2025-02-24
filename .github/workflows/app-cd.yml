@@ -64,16 +64,11 @@ jobs:
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
 
-      - name: Search for Trivy Results
-        run: |
-          find . -name "trivy-results.json"
-
       - name: Upload Trivy Results
         uses: actions/upload-artifact@v4
         with:
           name: trivy-results
-          path: |
-            trivy-results.json
+          path: trivy-results.json
 
       - name: Upload Trivy Results to S3
         run: |
@@ -83,41 +78,84 @@ jobs:
       - name: Push Image
         run: docker push ${{ steps.tags.outputs.tags }}
         
-      - name: Update ECS Task Definition
-        id: update-task
+      - name: Download Task Definition
+        id: download-taskdef
         run: |
-          # Get current task definition
           TASK_FAMILY="${{ secrets.ECS_FAMILY }}"
-          TASK_DEF=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --query 'taskDefinition' --output json)
+          aws ecs describe-task-definition \
+            --task-definition $TASK_FAMILY \
+            --query 'taskDefinition' \
+            --output json > taskdef.json
+          echo "task_family=$TASK_FAMILY" >> $GITHUB_OUTPUT
 
-          # Get container definition
-          CONTAINER_DEFS=$(echo $TASK_DEF | jq '.containerDefinitions')
+      - name: Render New Task Definition
+        id: render-taskdef
+        run: |
+          # Read the task definition
+          TASKDEF_CONTENT=$(cat taskdef.json)
+          
+          # Update the image in container definitions
+          NEW_TASKDEF=$(echo "$TASKDEF_CONTENT" | jq --arg IMAGE "${{ steps.tags.outputs.tags }}" \
+            '.containerDefinitions[0].image = $IMAGE')
+          
+          # Remove fields that shouldn't be included in register-task-definition
+          NEW_TASKDEF=$(echo "$NEW_TASKDEF" | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+          
+          # Save the new task definition
+          echo "$NEW_TASKDEF" > new-taskdef.json
+          
+          if [ $? -ne 0 ]; then
+            echo "Failed to create new task definition"
+            exit 1
+          fi
 
-          # Verify that container names are present
-          if echo $CONTAINER_DEFS | jq '.[] | has("name")' | grep -q false; then
-            echo "Error: One or more containers are missing the 'name' field."
+      - name: Register New Task Definition
+        id: register-taskdef
+        run: |
+          NEW_TASKDEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "file://new-taskdef.json" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          
+          if [ $? -ne 0 ]; then
+            echo "Failed to register new task definition"
             exit 1
           fi
           
-          # Update container image
-          NEW_TASK_DEF=$(echo $TASK_DEF | jq --argjson NEW_CONTAINER_DEFS "$NEW_CONTAINER_DEFS" '.containerDefinitions = $NEW_CONTAINER_DEFS')
-          
-          # Register new task definition
-          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
-            --family $TASK_FAMILY \
-            --cli-input-json "$NEW_TASK_DEF" \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
-            
-          echo "task_def_arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
-          
+          echo "task_def_arn=$NEW_TASKDEF_ARN" >> $GITHUB_OUTPUT
+
       - name: Update ECS Service
         run: |
+          aws ecs wait services-stable \
+            --cluster ${{ secrets.ECS_CLUSTER }} \
+            --services ${{ secrets.ECS_SERVICE }}
+            
           aws ecs update-service \
             --cluster ${{ secrets.ECS_CLUSTER }} \
             --service ${{ secrets.ECS_SERVICE }} \
-            --task-definition ${{ steps.update-task.outputs.task_def_arn }} \
+            --task-definition ${{ steps.register-taskdef.outputs.task_def_arn }} \
             --force-new-deployment
+
+          # Wait for service to be stable after update
+          aws ecs wait services-stable \
+            --cluster ${{ secrets.ECS_CLUSTER }} \
+            --services ${{ secrets.ECS_SERVICE }}
+
+      - name: Verify Deployment
+        run: |
+          # Get the deployment status
+          DEPLOY_STATUS=$(aws ecs describe-services \
+            --cluster ${{ secrets.ECS_CLUSTER }} \
+            --services ${{ secrets.ECS_SERVICE }} \
+            --query 'services[0].deployments[0].status' \
+            --output text)
+          
+          if [ "$DEPLOY_STATUS" != "PRIMARY" ]; then
+            echo "Deployment failed: Service not stable"
+            exit 1
+          fi
+          
+          echo "Deployment successful!"
 
       - name: Notify Slack
         if: always()
@@ -125,6 +163,9 @@ jobs:
         with:
           status: ${{ job.status }}
           fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
-          text: "Deployment to ${{ github.ref_name }} environment ${{ job.status }}!"
+          text: |
+            Deployment to ${{ github.ref_name }} environment ${{ job.status }}!
+            Image: ${{ steps.tags.outputs.tags }}
+            Task Definition: ${{ steps.register-taskdef.outputs.task_def_arn }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
