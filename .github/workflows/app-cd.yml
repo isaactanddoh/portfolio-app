@@ -88,17 +88,22 @@ jobs:
         run: |
           # Get current task definition
           TASK_FAMILY="${{ secrets.TASK_FAMILY }}"
-          TASK_DEF=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --query 'taskDefinition.containerDefinitions' --output json)
+          CONTAINER_NAME="${{ secrets.CONTAINER_NAME }}"
+
+
+          TASK_DEF=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --query 'taskDefinition' --output json)
+
+          CLEAN_TASK_DEF=$(echo "$TASK_DEF" | jq 'del(.status, .revision, .taskDefinitionArn)')
           
           # Update container image
-          NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "${{ steps.tags.outputs.tags }}" '.containerDefinitions[0].image = $IMAGE')
+          NEW_TASK_DEF=$(echo "$CLEAN_TASK_DEF" | jq --arg IMAGE "${{ steps.tags.outputs.tags }}" \
+          '.containerDefinitions |= map(if .name == "'"$CONTAINER_NAME"'" then .image = $IMAGE else . end)')
           
           # Register new task definition
           NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
-            --family $TASK_FAMILY \
-            --cli-input-json "$NEW_TASK_DEF" \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
+          --cli-input-json "$NEW_TASK_DEF" \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
             
           echo "task_def_arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
           
