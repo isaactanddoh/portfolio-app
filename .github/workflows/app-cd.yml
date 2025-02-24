@@ -88,22 +88,26 @@ jobs:
         run: |
           # Get current task definition
           TASK_FAMILY="${{ secrets.ECS_FAMILY }}"
-          CONTAINER_NAME="${{ secrets.CONTAINER_NAME }}"
-
-
           TASK_DEF=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --query 'taskDefinition' --output json)
 
-          CLEAN_TASK_DEF=$(echo "$TASK_DEF" | jq 'del(.status, .revision, .taskDefinitionArn)')
+          # Get container definition
+          CONTAINER_DEFS=$(echo $TASK_DEF | jq '.containerDefinitions')
+
+          # Verify that container names are present
+          if echo $CONTAINER_DEFS | jq '.[] | has("name")' | grep -q false; then
+            echo "Error: One or more containers are missing the 'name' field."
+            exit 1
+          fi
           
           # Update container image
-          NEW_TASK_DEF=$(echo "$CLEAN_TASK_DEF" | jq --arg IMAGE "${{ steps.tags.outputs.tags }}" \
-          '.containerDefinitions |= map(if .name == "'"$CONTAINER_NAME"'" then .image = $IMAGE else . end)')
+          NEW_TASK_DEF=$(echo $TASK_DEF | jq --argjson NEW_CONTAINER_DEFS "$NEW_CONTAINER_DEFS" '.containerDefinitions = $NEW_CONTAINER_DEFS')
           
           # Register new task definition
           NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
-          --cli-input-json "$NEW_TASK_DEF" \
-          --query 'taskDefinition.taskDefinitionArn' \
-          --output text)
+            --family $TASK_FAMILY \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
             
           echo "task_def_arn=$NEW_TASK_DEF_ARN" >> $GITHUB_OUTPUT
           
