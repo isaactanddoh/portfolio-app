@@ -126,24 +126,26 @@ jobs:
 
       - name: Update ECS Service
         run: |
-          aws ecs wait services-stable \
-            --cluster ${{ secrets.ECS_CLUSTER }} \
-            --services ${{ secrets.ECS_SERVICE }}
-            
+          # Update service with new task definition
+          echo "Updating ECS service with new task definition..."
           aws ecs update-service \
             --cluster ${{ secrets.ECS_CLUSTER }} \
             --service ${{ secrets.ECS_SERVICE }} \
             --task-definition ${{ steps.register-taskdef.outputs.task_def_arn }} \
             --force-new-deployment
 
-          # Wait for service to be stable after update
-          aws ecs wait services-stable \
+          echo "Waiting for service to stabilize..."
+          if ! aws ecs wait services-stable \
             --cluster ${{ secrets.ECS_CLUSTER }} \
-            --services ${{ secrets.ECS_SERVICE }}
+            --services ${{ secrets.ECS_SERVICE }}; then
+            echo "Error: Service failed to stabilize"
+            exit 1
+          fi
 
       - name: Verify Deployment
         run: |
           # Get the deployment status
+          echo "Verifying deployment status..."
           DEPLOY_STATUS=$(aws ecs describe-services \
             --cluster ${{ secrets.ECS_CLUSTER }} \
             --services ${{ secrets.ECS_SERVICE }} \
@@ -152,10 +154,16 @@ jobs:
           
           if [ "$DEPLOY_STATUS" != "PRIMARY" ]; then
             echo "Deployment failed: Service not stable"
+            # Get the failure reasons if any
+            aws ecs describe-services \
+              --cluster ${{ secrets.ECS_CLUSTER }} \
+              --services ${{ secrets.ECS_SERVICE }} \
+              --query 'services[0].events[0:5]' \
+              --output text
             exit 1
           fi
           
-          echo "Deployment successful!"
+          echo "✅ Deployment successful!"
 
       - name: Notify Slack
         if: always()
