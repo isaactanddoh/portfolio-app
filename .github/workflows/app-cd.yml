@@ -58,12 +58,16 @@ jobs:
         with:
           image-ref: ${{ steps.tags.outputs.tags }}
           format: 'table'
-          output: 'trivy-results.sarif'
+          output: 'trivy-results.json'
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
-      
+
+      - name: Search for Trivy Results
+        run: |
+          find . -name "trivy-results.json"
+
       - name: Upload Trivy Results
         uses: actions/upload-artifact@v4
         with:
@@ -71,14 +75,9 @@ jobs:
           path: |
             trivy-results.json
 
-      - name: Search for Trivy Results
-        run: |
-          find . -name "trivy-results.sarif"
-
       - name: Upload Trivy Results to S3
         run: |
           REPORT_DIR="reports/${{ github.repository }}/${{ github.ref_name }}/${{ github.sha }}"
-          aws s3 cp trivy-results.sarif "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
           aws s3 cp trivy-results.json "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
 
       - name: Push Image
