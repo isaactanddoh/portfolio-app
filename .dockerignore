@@ -48,14 +48,13 @@ LICENSE
 .circleci/
 
 # Docker
-Dockerfile
-.dockerignore
+Dockerfile*
 docker-compose*
 
-# Terraform
-infra/
-*.tf
-.terraform/
+# Test files
+tests/
+__tests__/
+__mocks__/
 
 # Misc
 *.zip
