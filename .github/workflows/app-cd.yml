@@ -81,7 +81,7 @@ jobs:
           aws s3 cp trivy-results.json "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
 
       - name: Push Image
-        run: docker push ${{ steps.tags.outputs.tags }}
+        run: docker push ${{ secrets.ECR_REPO }}
         
       - name: Update ECS Task Definition
         id: update-task
