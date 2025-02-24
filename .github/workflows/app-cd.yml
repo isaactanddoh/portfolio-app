@@ -71,6 +71,10 @@ jobs:
           path: |
             trivy-results.json
 
+      - name: Search for Trivy Results
+        run: |
+          find . -name "trivy-results.sarif"
+
       - name: Upload Trivy Results to S3
         run: |
           REPORT_DIR="reports/${{ github.repository }}/${{ github.ref_name }}/${{ github.sha }}"
