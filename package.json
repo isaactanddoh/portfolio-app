@@ -54,6 +54,6 @@
     ]
   },
   "resolutions": {
-    "cross-spawn": "^8.0.0"
+    "cross-spawn": "^7.0.6"
   }
 }
