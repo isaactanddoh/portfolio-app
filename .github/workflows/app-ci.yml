@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: '22.x'
           cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
+          cache-dependency-path: 'package-lock.json'
 
       # Explicitly handle npm caching
       - name: Cache npm dependencies
@@ -40,14 +40,16 @@ jobs:
           path: |
             ~/.npm
             node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
       - name: Install Dependencies
         run: |
           npm install npm-force-resolutions --save-dev
+          npm install
           npx npm-force-resolutions
+          npm install
 
       - name: Run npm audit
         run: |
