@@ -57,7 +57,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.tags.outputs.tags }}
-          format: 'sarif,table'
+          format: 'table'
           output: 'trivy-results.sarif'
           exit-code: '1'
           ignore-unfixed: true
@@ -69,18 +69,13 @@ jobs:
         with:
           name: trivy-results
           path: |
-            trivy-results.sarif
             trivy-results.json
-            sbom.json
-            scout-report.json
 
       - name: Upload Trivy Results to S3
         run: |
           REPORT_DIR="reports/${{ github.repository }}/${{ github.ref_name }}/${{ github.sha }}"
           aws s3 cp trivy-results.sarif "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
           aws s3 cp trivy-results.json "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
-          aws s3 cp sbom.json "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/sbom.json"
-          aws s3 cp scout-report.json "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/scout-report.json"
 
       - name: Push Image
         run: docker push ${{ steps.tags.outputs.tags }}
