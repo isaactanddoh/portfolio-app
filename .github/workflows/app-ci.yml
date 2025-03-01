@@ -134,10 +134,25 @@ jobs:
       - name: Generate Image Tags
         id: tags
         run: |
-          GIT_SHA=$(git rev-parse --short HEAD)
+          # Validate ECR repository name is not empty
+          if [ -z "${{ secrets.ECR_REPO }}" ]; then
+            echo "Error: ECR_REPO secret is empty"
+            exit 1
+          fi
+          
+          # Generate the full image tag
           REGISTRY="${{ steps.login-ecr.outputs.registry }}"
           REPOSITORY="${{ secrets.ECR_REPO }}"
-          echo "tags=${REGISTRY}/${REPOSITORY}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          IMAGE_TAG="${REGISTRY}/${REPOSITORY}:${{ github.sha }}"
+          
+          # Validate the tag format
+          if [[ ! "$IMAGE_TAG" =~ ^[0-9]+\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-zA-Z0-9/_-]+:[a-zA-Z0-9_.-]+$ ]]; then
+            echo "Error: Invalid image tag format: $IMAGE_TAG"
+            exit 1
+          fi
+          
+          echo "tags=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "Generated image tag: $IMAGE_TAG"
 
       - name: Build Image
         uses: docker/build-push-action@v6
