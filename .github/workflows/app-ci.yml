@@ -8,7 +8,6 @@ on:
       - .github/workflows/app-ci.yml
       - package*.json
       - sonar-project.properties
-      - '!Dockerfile'
       - '!.github/dependabot.yml'
       - '!.github/workflows/app-cd.yml'
 
@@ -21,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: . # Set the working directory to app folder
+        working-directory: .
     
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +32,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: '**/package-lock.json'
 
-      # Explicitly handle npm caching
       - name: Cache npm dependencies
         uses: actions/cache@v4
         with:
@@ -92,10 +90,16 @@ jobs:
           project: 'portfolio-app'
           path: '.'
           format: 'HTML'
-          out: 'reports'  # Specify output directory
+          out: 'reports'
 
       - name: Run Integration Tests
         run: npm run test:integration
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.IAM_ROLE }}
+          aws-region: eu-west-1
 
       - name: Upload Security Reports
         uses: actions/upload-artifact@v4
@@ -105,17 +109,67 @@ jobs:
             ${{ github.workspace }}/npm-audit-report.json
             ${{ github.workspace }}/reports/dependency-check-report.html
 
+      - name: Upload Reports to S3
+        run: |
+          REPORT_DIR="reports/${{ github.repository }}/${{ github.ref_name }}/${{ github.sha }}"
+          aws s3 cp ${{ github.workspace }}/npm-audit-report.json "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
+          aws s3 cp ${{ github.workspace }}/reports/dependency-check-report.html "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
+
+  build-and-test-image:
+    needs: security-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.IAM_ROLE }}
           aws-region: eu-west-1
 
-      - name: Upload Reports to S3
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Generate Image Tags
+        id: tags
+        run: |
+          GIT_SHA=$(git rev-parse --short HEAD)
+          echo "tags=${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+
+      - name: Build Image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: ${{ steps.tags.outputs.tags }}
+          no-cache: true
+
+      - name: Scan Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.tags.outputs.tags }}
+          format: 'table'
+          output: 'trivy-results.json'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-results
+          path: trivy-results.json
+
+      - name: Upload Trivy Results to S3
         run: |
           REPORT_DIR="reports/${{ github.repository }}/${{ github.ref_name }}/${{ github.sha }}"
-          aws s3 cp ${{ github.workspace }}/npm-audit-report.json "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
-          aws s3 cp ${{ github.workspace }}/reports/dependency-check-report.html "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
+          aws s3 cp trivy-results.json "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
+
+      - name: Push Image to ECR
+        run: docker push ${{ steps.tags.outputs.tags }}
 
       - name: Notify Slack
         if: always()
@@ -124,8 +178,9 @@ jobs:
           status: ${{ job.status }}
           fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
           text: |
-            Security Scan for PR #${{ github.event.pull_request.number }} ${{ job.status }}!
+            CI Pipeline for PR #${{ github.event.pull_request.number }} ${{ job.status }}!
             Branch: ${{ github.head_ref }}
+            Image: ${{ steps.tags.outputs.tags }}
             Reports: s3://${{ secrets.REPORTS_BUCKET }}/${{ github.repository }}/${{ github.ref_name }}/${{ github.sha }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
