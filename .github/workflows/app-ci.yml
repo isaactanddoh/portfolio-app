@@ -120,6 +120,8 @@ jobs:
   build-and-test-image:
     needs: security-checks
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
