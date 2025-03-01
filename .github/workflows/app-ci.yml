@@ -12,10 +12,10 @@ on:
 permissions:
   id-token: write
   contents: read
-  security-events: write
-  pull-requests: read
   actions: read
   checks: write
+  pull-requests: read
+  security-events: write
 
 env:
   ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
