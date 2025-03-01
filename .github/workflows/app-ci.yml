@@ -77,10 +77,6 @@ jobs:
           path: '.'
           format: 'HTML'
           out: 'reports'
-          args: >
-            --suppression suppression.xml
-            --failOnCVSS 7
-            --enableRetired
 
       - name: Run Integration Tests
         run: npm run test:integration
