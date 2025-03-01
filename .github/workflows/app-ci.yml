@@ -78,6 +78,7 @@ jobs:
           format: 'HTML'
           out: 'reports'
 
+
       - name: Run Integration Tests
         run: npm run test:integration
 
