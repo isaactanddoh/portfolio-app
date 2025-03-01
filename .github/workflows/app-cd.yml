@@ -3,162 +3,156 @@ name: Application CD Pipeline
 on:
   push:
     branches: [ dev, staging, main ]
-    paths:
-      - '**'
-      - '!.github/dependabot.yml'
-      - '!.github/workflows/app-ci.yml'
-      
+    paths-ignore:
+      - '.github/workflows/app-ci.yml'
+      - '.github/dependabot.yml'
+      - '*.md'
+      - 'docs/**'
+
 permissions:
   id-token: write
   contents: read
 
+env:
+  ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
+  AWS_REGION: eu-west-1
+  ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+  ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
+  ECS_TASK_FAMILY: ${{ secrets.ECS_FAMILY }}
+
 jobs:
   deploy:
+    name: Deploy to ECS
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
     environment:
       name: ${{ github.ref_name }}
-
+    
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.IAM_ROLE }}
           aws-region: eu-west-1
 
-      - name: Login to ECR
+      - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-      
-      - name: Generate Image Tags
-        id: tags
+
+      - name: Get Image Tag
+        id: image
         run: |
-          # Validate ECR repository name is not empty
-          if [ -z "${{ secrets.ECR_REPO }}" ]; then
-            echo "Error: ECR_REPO secret is empty"
-            exit 1
-          fi
-          
-          # Generate the full image tag
-          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
-          REPOSITORY="${{ secrets.ECR_REPO }}"
-          IMAGE_TAG="${REGISTRY}/${REPOSITORY}:${{ github.sha }}"
-          
-          # Validate the tag format
-          if [[ ! "$IMAGE_TAG" =~ ^[0-9]+\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-zA-Z0-9/_-]+:[a-zA-Z0-9_.-]+$ ]]; then
-            echo "Error: Invalid image tag format: $IMAGE_TAG"
-            exit 1
-          fi
-          
-          echo "tags=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "Generated image tag: $IMAGE_TAG"
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          echo "tag=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${PR_NUMBER}-${SHA_SHORT}" >> $GITHUB_OUTPUT
 
       - name: Verify Image Exists
         run: |
-          # Try to inspect the image
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          SHA_SHORT=$(git rev-parse --short HEAD)
           if ! aws ecr describe-images \
-            --repository-name ${{ secrets.ECR_REPO }} \
-            --image-ids imageTag=${{ github.sha }} >/dev/null 2>&1; then
-            echo "Error: Image ${{ steps.tags.outputs.tags }} not found in ECR"
-            echo "Please ensure the CI pipeline has successfully built and pushed the image"
+            --repository-name ${{ env.ECR_REPO }} \
+            --image-ids imageTag=${PR_NUMBER}-${SHA_SHORT} >/dev/null 2>&1; then
+            echo "Error: Required image not found in ECR"
+            echo "Image: ${{ steps.image.outputs.tag }}"
             exit 1
           fi
-          echo "✅ Image found in ECR"
+          echo "✅ Image verified in ECR"
 
-      - name: Download Task Definition
-        id: download-taskdef
+      - name: Download Current Task Definition
         run: |
           TASK_FAMILY="${{ secrets.ECS_FAMILY }}"
           aws ecs describe-task-definition \
             --task-definition $TASK_FAMILY \
             --query 'taskDefinition' \
-            --output json > taskdef.json
-          echo "task_family=$TASK_FAMILY" >> $GITHUB_OUTPUT
-          # Store current task definition ARN for potential rollback
+            --output json > task-definition.json
+          echo "task-family=$TASK_FAMILY" >> $GITHUB_OUTPUT
+
+      - name: Store Current Task Definition for Rollback
+        id: current-task
+        run: |
           CURRENT_TASKDEF_ARN=$(aws ecs describe-services \
-            --cluster ${{ secrets.ECS_CLUSTER }} \
-            --services ${{ secrets.ECS_SERVICE }} \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
             --query 'services[0].taskDefinition' \
             --output text)
-          echo "current_taskdef_arn=$CURRENT_TASKDEF_ARN" >> $GITHUB_OUTPUT
+          echo "arn=$CURRENT_TASKDEF_ARN" >> $GITHUB_OUTPUT
 
-      - name: Render New Task Definition
-        id: render-taskdef
+      - name: Update Task Definition
+        id: task-def
         run: |
           # Read the task definition
-          TASKDEF_CONTENT=$(cat taskdef.json)
+          TASKDEF_CONTENT=$(cat task-definition.json)
           
-          # Update the image in container definitions
-          NEW_TASKDEF=$(echo "$TASKDEF_CONTENT" | jq --arg IMAGE "${{ steps.tags.outputs.tags }}" \
+          # Update container image
+          NEW_TASKDEF=$(echo "$TASKDEF_CONTENT" | jq --arg IMAGE "${{ steps.image.outputs.tag }}" \
             '.containerDefinitions[0].image = $IMAGE')
           
           # Remove fields that shouldn't be included in register-task-definition
           NEW_TASKDEF=$(echo "$NEW_TASKDEF" | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
           
           # Save the new task definition
-          echo "$NEW_TASKDEF" > new-taskdef.json
+          echo "$NEW_TASKDEF" > new-task-definition.json
           
-          if [ $? -ne 0 ]; then
-            echo "Failed to create new task definition"
-            exit 1
-          fi
-
-      - name: Register New Task Definition
-        id: register-taskdef
-        run: |
+          # Register new task definition
           NEW_TASKDEF_ARN=$(aws ecs register-task-definition \
-            --cli-input-json "file://new-taskdef.json" \
+            --cli-input-json "file://new-task-definition.json" \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
           
-          if [ $? -ne 0 ]; then
-            echo "Failed to register new task definition"
-            exit 1
-          fi
-          
-          echo "task_def_arn=$NEW_TASKDEF_ARN" >> $GITHUB_OUTPUT
+          echo "arn=$NEW_TASKDEF_ARN" >> $GITHUB_OUTPUT
 
-      - name: Update ECS Service
+      - name: Deploy to ECS
         id: deploy
         run: |
-          # Update service with new task definition
           echo "Updating ECS service with new task definition..."
           aws ecs update-service \
-            --cluster ${{ secrets.ECS_CLUSTER }} \
-            --service ${{ secrets.ECS_SERVICE }} \
-            --task-definition ${{ steps.register-taskdef.outputs.task_def_arn }} \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.task-def.outputs.arn }} \
             --force-new-deployment
 
           echo "Waiting for service to stabilize..."
-          if ! aws ecs wait services-stable \
-            --cluster ${{ secrets.ECS_CLUSTER }} \
-            --services ${{ secrets.ECS_SERVICE }}; then
-            echo "Error: Service failed to stabilize"
-            exit 1
-          fi
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
 
       - name: Verify Deployment
         run: |
-          # Get the deployment status
           echo "Verifying deployment status..."
           DEPLOY_STATUS=$(aws ecs describe-services \
-            --cluster ${{ secrets.ECS_CLUSTER }} \
-            --services ${{ secrets.ECS_SERVICE }} \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
             --query 'services[0].deployments[0].status' \
             --output text)
           
           if [ "$DEPLOY_STATUS" != "PRIMARY" ]; then
             echo "Deployment failed: Service not stable"
-            # Get the failure reasons if any
             aws ecs describe-services \
-              --cluster ${{ secrets.ECS_CLUSTER }} \
-              --services ${{ secrets.ECS_SERVICE }} \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --services ${{ env.ECS_SERVICE }} \
               --query 'services[0].events[0:5]' \
               --output text
+            exit 1
+          fi
+          
+          RUNNING_COUNT=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].runningCount' \
+            --output text)
+          
+          DESIRED_COUNT=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].desiredCount' \
+            --output text)
+          
+          if [ "$RUNNING_COUNT" -lt "$DESIRED_COUNT" ]; then
+            echo "Deployment failed: Not all tasks are running"
+            echo "Running: $RUNNING_COUNT, Desired: $DESIRED_COUNT"
             exit 1
           fi
           
@@ -169,20 +163,20 @@ jobs:
         run: |
           echo "Deployment failed, rolling back to previous task definition..."
           aws ecs update-service \
-            --cluster ${{ secrets.ECS_CLUSTER }} \
-            --service ${{ secrets.ECS_SERVICE }} \
-            --task-definition ${{ steps.download-taskdef.outputs.current_taskdef_arn }} \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.current-task.outputs.arn }} \
             --force-new-deployment
 
           if ! aws ecs wait services-stable \
-            --cluster ${{ secrets.ECS_CLUSTER }} \
-            --services ${{ secrets.ECS_SERVICE }}; then
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}; then
             echo "Error: Rollback failed to stabilize"
             exit 1
           fi
           echo "✅ Rollback successful"
 
-      - name: Notify Slack
+      - name: Notify Status
         if: always()
         uses: 8398a7/action-slack@v3
         with:
@@ -190,8 +184,8 @@ jobs:
           fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
           text: |
             Deployment to ${{ github.ref_name }} environment ${{ job.status }}!
-            Image: ${{ steps.tags.outputs.tags }}
-            Task Definition: ${{ steps.register-taskdef.outputs.task_def_arn }}
+            Image: ${{ steps.image.outputs.tag }}
+            Task Definition: ${{ steps.task-def.outputs.arn }}
             ${{ job.status == 'failure' && steps.deploy.outcome == 'failure' && '⚠️ Deployment failed - Rolled back to previous version' || '' }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

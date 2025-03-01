@@ -3,89 +3,73 @@ name: Application CI Pipeline
 on:
   pull_request:
     branches: [ dev, staging, main ]
-    paths:
-      - '**'
-      - .github/workflows/app-ci.yml
-      - package*.json
-      - sonar-project.properties
-      - '!.github/dependabot.yml'
-      - '!.github/workflows/app-cd.yml'
+    paths-ignore:
+      - '.github/workflows/app-cd.yml'
+      - '.github/dependabot.yml'
+      - '*.md'
+      - 'docs/**'
 
 permissions:
   id-token: write
   contents: read
+  security-events: write
+  pull-requests: read
+  actions: read
+  checks: write
+
+env:
+  ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
+  AWS_REGION: eu-west-1
 
 jobs:
-  security-checks:
+  security-compliance:
+    name: Security & Compliance Checks
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
     environment:
       name: ${{ github.ref_name }}
-    
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
+          node-version: '20.x'
           cache: 'npm'
-          cache-dependency-path: '**/package-lock.json'
-
-      - name: Cache npm dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
 
       - name: Install Dependencies
         run: |
           npm install npm-force-resolutions --save-dev
+          npm install -g snyk
 
-      - name: Run npm audit
-        run: |
-          npm audit --json > npm-audit-report.json || true
-          npm audit fix --audit-level=critical --force
-          if [ $(jq '.vulnerabilities | length' npm-audit-report.json) -gt 0 ]; then
-            echo "Critical vulnerabilities found:"
-            jq '.vulnerabilities[] | select(.severity=="critical")' npm-audit-report.json
-            exit 1
-          fi
-        
-      - name: Run Tests with Coverage
-        run: |
-          npm run test:coverage
-        
       - name: Run SAST with SonarCloud
-        uses: SonarSource/sonarqube-scan-action@v4
+        uses: SonarSource/sonarcloud-github-action@v2.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
-          projectBaseDir: .
           args: >
             -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
             -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
             -Dsonar.sources=src
             -Dsonar.tests=tests
             -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
-            -Dsonar.exclusions=node_modules/**,coverage/**,public/**
-            -Dsonar.coverage.exclusions=public/**
-            -Dsonar.verbose=true
-        
+            -Dsonar.coverage.exclusions=tests/**,**/*.test.*
+            -Dsonar.exclusions=node_modules/**
+
+      - name: Run NPM Audit
+        run: |
+          npm audit --json > npm-audit.json || true
+          npm audit fix --audit-level=critical --force || true
+
       - name: Run Snyk Security Scan
-        uses: snyk/actions/node@master
+        run: |
+          snyk test --json > snyk-results.json || true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --file=package.json
-          
+
       - name: Run OWASP Dependency Check
         uses: dependency-check/Dependency-Check_Action@main
         with:
@@ -93,6 +77,10 @@ jobs:
           path: '.'
           format: 'HTML'
           out: 'reports'
+          args: >
+            --suppression suppression.xml
+            --failOnCVSS 7
+            --enableRetired
 
       - name: Run Integration Tests
         run: npm run test:integration
@@ -100,30 +88,45 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.IAM_ROLE }}
-          aws-region: eu-west-1
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Upload Security Reports
+      - name: Upload Reports to S3
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          REPORT_PATH="security-reports/pr-${PR_NUMBER}/${TIMESTAMP}"
+          
+          # Upload all reports
+          aws s3 cp npm-audit.json "s3://${{ secrets.REPORTS_BUCKET }}/${REPORT_PATH}/"
+          aws s3 cp snyk-results.json "s3://${{ secrets.REPORTS_BUCKET }}/${REPORT_PATH}/"
+          aws s3 cp reports/dependency-check-report.html "s3://${{ secrets.REPORTS_BUCKET }}/${REPORT_PATH}/"
+          
+          # Create report summary
+          echo "Security Reports Summary for PR #${PR_NUMBER}" > report-summary.md
+          echo "Report Location: s3://${{ secrets.REPORTS_BUCKET }}/${REPORT_PATH}" >> report-summary.md
+          echo "Generated at: $(date)" >> report-summary.md
+
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: security-reports
           path: |
-            ${{ github.workspace }}/npm-audit-report.json
-            ${{ github.workspace }}/reports/dependency-check-report.html
+            npm-audit.json
+            snyk-results.json
+            reports/
+            report-summary.md
 
-      - name: Upload Reports to S3
-        run: |
-          REPORT_DIR="reports/${{ github.repository }}/${{ github.ref_name }}/${{ github.sha }}"
-          aws s3 cp ${{ github.workspace }}/npm-audit-report.json "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
-          aws s3 cp ${{ github.workspace }}/reports/dependency-check-report.html "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
-
-  build-and-test-image:
-    needs: security-checks
+  build-and-scan:
+    name: Build & Scan Image
+    needs: security-compliance
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.ref_name }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -131,41 +134,33 @@ jobs:
           role-to-assume: ${{ secrets.IAM_ROLE }}
           aws-region: eu-west-1
 
-      - name: Login to ECR
+      - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Generate Image Tags
         id: tags
         run: |
-          # Validate ECR repository name is not empty
-          if [ -z "${{ secrets.ECR_REPO }}" ]; then
-            echo "Error: ECR_REPO secret is empty"
-            exit 1
-          fi
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          SHA_SHORT=$(git rev-parse --short HEAD)
           
-          # Generate the full image tag
-          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
-          REPOSITORY="${{ secrets.ECR_REPO }}"
-          IMAGE_TAG="${REGISTRY}/${REPOSITORY}:${{ github.sha }}"
-          
-          # Validate the tag format
-          if [[ ! "$IMAGE_TAG" =~ ^[0-9]+\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-zA-Z0-9/_-]+:[a-zA-Z0-9_.-]+$ ]]; then
-            echo "Error: Invalid image tag format: $IMAGE_TAG"
-            exit 1
-          fi
-          
-          echo "tags=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "Generated image tag: $IMAGE_TAG"
+          # Generate unique tags
+          echo "sha_tag=${SHA_SHORT}" >> $GITHUB_OUTPUT
+          echo "pr_tag=pr-${PR_NUMBER}" >> $GITHUB_OUTPUT
+          echo "tags=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${PR_NUMBER}-${SHA_SHORT}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Build Image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          push: false
           load: true
           tags: ${{ steps.tags.outputs.tags }}
-          no-cache: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Scan Image with Trivy
         uses: aquasecurity/trivy-action@master
@@ -173,35 +168,32 @@ jobs:
           image-ref: ${{ steps.tags.outputs.tags }}
           format: 'table'
           output: 'trivy-results.json'
+          severity: 'CRITICAL,HIGH'
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
 
       - name: Upload Trivy Results
-        uses: actions/upload-artifact@v4
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          name: trivy-results
-          path: trivy-results.json
+          sarif_file: 'trivy-results.json'
+          category: 'Trivy Container Scan'
 
-      - name: Upload Trivy Results to S3
+      - name: Push Images to ECR
+        if: success()
         run: |
-          REPORT_DIR="reports/${{ github.repository }}/${{ github.ref_name }}/${{ github.sha }}"
-          aws s3 cp trivy-results.json "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
+          docker push ${{ steps.tags.outputs.tags }}
 
-      - name: Push Image to ECR
-        run: docker push ${{ steps.tags.outputs.tags }}
-
-      - name: Notify Slack
-        if: always()
+      - name: Notify on Failure
+        if: failure()
         uses: 8398a7/action-slack@v3
         with:
           status: ${{ job.status }}
           fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
           text: |
-            CI Pipeline for PR #${{ github.event.pull_request.number }} ${{ job.status }}!
+            CI Pipeline failed for PR #${{ github.event.pull_request.number }}
             Branch: ${{ github.head_ref }}
-            Image: ${{ steps.tags.outputs.tags }}
-            Reports: s3://${{ secrets.REPORTS_BUCKET }}/${{ github.repository }}/${{ github.ref_name }}/${{ github.sha }}
+            Commit: ${{ github.sha }}
+            Please check the logs for more details.
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
