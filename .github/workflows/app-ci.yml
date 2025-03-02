@@ -159,11 +159,24 @@ jobs:
 
       - name: Upload Image Tag in AWS SSM
         run: |
+          # Get the full image tag
+          IMAGE_TAG="${{ steps.tags.outputs.tags }}"
+          
+          # Debug output
+          echo "Storing image tag in SSM: $IMAGE_TAG"
+          
+          # Store in SSM
           aws ssm put-parameter \
             --name "/${{ github.repository }}/latest-image-tag" \
             --type "String" \
-            --value "$tags" \
+            --value "$IMAGE_TAG" \
             --overwrite
+
+          # Verify the parameter was set
+          aws ssm get-parameter \
+            --name "/${{ github.repository }}/latest-image-tag" \
+            --query 'Parameter.Value' \
+            --output text
 
       - name: Upload Image Tag
         uses: actions/upload-artifact@v4
@@ -171,7 +184,7 @@ jobs:
           name: image-tag
           path: image-tag.txt
 
-      - name: Build Image
+      - name: Build Image 
         uses: docker/build-push-action@v6
         with:
           context: .

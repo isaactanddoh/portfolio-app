@@ -36,13 +36,23 @@ jobs:
       - name: Retrieve Image Tag from SSM
         id: retrieve-image-tag
         run: |
-          tag=$(aws ssm get-parameter \
+          # Get the image tag from SSM
+          if ! IMAGE_TAG=$(aws ssm get-parameter \
             --name "/${{ github.repository }}/latest-image-tag" \
             --query 'Parameter.Value' \
-            --output text)
+            --output text); then
+            echo "Error: Failed to retrieve image tag from SSM"
+            exit 1
+          fi
 
-          echo "tag=$tag" >> $GITHUB_OUTPUT
-          echo "Using Image Tag: $tag"
+          # Verify we got a valid tag
+          if [ -z "$IMAGE_TAG" ]; then
+            echo "Error: Retrieved empty image tag from SSM"
+            exit 1
+          fi
+
+          echo "Retrieved image tag: $IMAGE_TAG"
+          echo "tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Verify Image Exists
         run: |
@@ -50,9 +60,9 @@ jobs:
           
           if ! aws ecr describe-images \
             --repository-name ${{ secrets.ECR_REPO }} \
-            --image-ids imageTag=$tag  >/dev/null 2>&1; then
+            --image-ids imageTag=$IMAGE_TAG  >/dev/null 2>&1; then
             echo "Error: Required image not found in ECR"
-            echo "Image: $tag"
+            echo "Image: $IMAGE_TAG"
             exit 1
           fi
           echo "✅ Image verified in ECR"
@@ -84,7 +94,7 @@ jobs:
           TASKDEF_CONTENT=$(cat taskdef.json)
           
           # Update the image in container definitions
-          NEW_TASKDEF=$(echo "$TASKDEF_CONTENT" | jq --arg IMAGE "${tag}" \
+          NEW_TASKDEF=$(echo "$TASKDEF_CONTENT" | jq --arg IMAGE "${IMAGE_TAG}" \
             '.containerDefinitions[0].image = $IMAGE')
           
           # Remove fields that shouldn't be included in register-task-definition
