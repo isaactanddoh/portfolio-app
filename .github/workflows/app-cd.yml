@@ -12,6 +12,10 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
+  AWS_REGION: eu-west-1
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -39,19 +43,30 @@ jobs:
         run: |
           GIT_SHA=$(git rev-parse --short HEAD)
           ENVIRONMENT="${{ github.ref_name }}"
-          echo "tags=${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:${ENVIRONMENT}-${GIT_SHA}" >> $GITHUB_OUTPUT
+          
+          # Debug information
+          echo "Environment: $ENVIRONMENT"
+          echo "Git SHA: $GIT_SHA"
+          
+          # Construct image tag
+          IMAGE_TAG="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${ENVIRONMENT}-${GIT_SHA}"
+          echo "Generated image tag: $IMAGE_TAG"
+          
+          echo "tags=$IMAGE_TAG" >> $GITHUB_OUTPUT
 
       - name: Verify Image Exists
         run: |
-          # Try to inspect the image
+          GIT_SHA=$(git rev-parse --short HEAD)
+          ENVIRONMENT="${{ github.ref_name }}"
+          
           if ! aws ecr describe-images \
-            --repository-name ${{ secrets.ECR_REPO }} \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
             --image-ids imageTag=${ENVIRONMENT}-${GIT_SHA} >/dev/null 2>&1; then
-            echo "Error: Image ${{ steps.tags.outputs.tags }} not found in ECR"
-            echo "Please ensure the CI pipeline has successfully built and pushed the image"
+            echo "Error: Required image not found in ECR"
+            echo "Image: ${{ steps.tags.outputs.tags }}"
             exit 1
           fi
-          echo "✅ Image found in ECR"
+          echo "✅ Image verified in ECR"
 
       - name: Download Task Definition
         id: download-taskdef

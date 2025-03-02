@@ -18,6 +18,10 @@ permissions:
   pull-requests: write
   checks: write
 
+env:
+  ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
+  AWS_REGION: eu-west-1
+
 jobs:
   security-checks:
     runs-on: ubuntu-latest
@@ -137,9 +141,21 @@ jobs:
       - name: Generate Image Tags
         id: tags
         run: |
+          # Get PR target branch (dev, staging, or main)
+          ENVIRONMENT="${{ github.base_ref }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
           GIT_SHA=$(git rev-parse --short HEAD)
-          ENVIRONMENT="${{ github.ref_name }}"
-          echo "tags=${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:${ENVIRONMENT}-${GIT_SHA}" >> $GITHUB_OUTPUT
+          
+          # Debug information
+          echo "Environment: $ENVIRONMENT"
+          echo "PR Number: $PR_NUMBER"
+          echo "Git SHA: $GIT_SHA"
+          
+          # Construct image tag
+          tags="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:pr-${PR_NUMBER}-${GIT_SHA}"
+          echo "Generated image tag: $tags"
+          
+          echo "tags=$tags" >> $GITHUB_OUTPUT
 
       - name: Build Image
         uses: docker/build-push-action@v6
@@ -169,7 +185,7 @@ jobs:
 
       - name: Upload Trivy Results to S3
         run: |
-          REPORT_DIR="reports/${{ github.repository }}/${{ github.ref_name }}/${{ github.sha }}"
+          REPORT_DIR="reports/${{ github.repository }}/${{ github.base_ref }}/${{ github.sha }}"
           aws s3 cp trivy-results.json "s3://${{ secrets.REPORTS_BUCKET }}/$REPORT_DIR/"
 
       - name: Push Image to ECR
@@ -183,8 +199,9 @@ jobs:
           fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
           text: |
             CI Pipeline for PR #${{ github.event.pull_request.number }} ${{ job.status }}!
-            Branch: ${{ github.head_ref }}
+            Branch: ${{ github.base_ref }}
+            PR Branch: ${{ github.head_ref }}
             Image: ${{ steps.tags.outputs.tags }}
-            Reports: s3://${{ secrets.REPORTS_BUCKET }}/${{ github.repository }}/${{ github.ref_name }}/${{ github.sha }}
+            Reports: s3://${{ secrets.REPORTS_BUCKET }}/${{ github.repository }}/${{ github.base_ref }}/${{ github.sha }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
