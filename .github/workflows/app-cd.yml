@@ -56,7 +56,16 @@ jobs:
 
       - name: Verify Image Exists
         run: |
-          GIT_SHA=$(git rev-parse --short HEAD)
+          # Extract repository name and tag from the full image URL
+          IMAGE_TAG="${{ steps.retrieve-image-tag.outputs.tag }}"
+          echo "Checking for image: $IMAGE_TAG"
+          
+          # Extract the repository name and tag from the full image URL
+          REPO_NAME=${{ secrets.ECR_REPO }}
+          TAG_PART=$(echo "$IMAGE_TAG" | cut -d':' -f2)
+          
+          echo "Repository: $REPO_NAME"
+          echo "Tag: $TAG_PART"
           
           if ! aws ecr describe-images \
             --repository-name ${{ secrets.ECR_REPO }} \
@@ -76,8 +85,6 @@ jobs:
             --query 'taskDefinition' \
             --output json > taskdef.json
 
-          # echo "task_family=$TASK_FAMILY" >> $GITHUB_OUTPUT
-
           # Store current task definition ARN for potential rollback
           CURRENT_TASKDEF_ARN=$(aws ecs describe-services \
             --cluster ${{ secrets.ECS_CLUSTER }} \
@@ -93,8 +100,8 @@ jobs:
           # Read the task definition
           TASKDEF_CONTENT=$(cat taskdef.json)
           
-          # Update the image in container definitions
-          NEW_TASKDEF=$(echo "$TASKDEF_CONTENT" | jq --arg IMAGE "${IMAGE_TAG}" \
+          # Update the image in container definitions using the full image URL
+          NEW_TASKDEF=$(echo "$TASKDEF_CONTENT" | jq --arg IMAGE "${{ steps.retrieve-image-tag.outputs.tag }}" \
             '.containerDefinitions[0].image = $IMAGE')
           
           # Remove fields that shouldn't be included in register-task-definition
