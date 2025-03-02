@@ -6,7 +6,6 @@ on:
     paths:
       - '**'
       - '!.github/dependabot.yml'
-      - '!.github/workflows/app-ci.yml'
       
 permissions:
   id-token: write

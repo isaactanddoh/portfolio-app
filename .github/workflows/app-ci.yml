@@ -9,7 +9,6 @@ on:
       - package*.json
       - sonar-project.properties
       - '!.github/dependabot.yml'
-      - '!.github/workflows/app-cd.yml'
 
 permissions:
   id-token: write
