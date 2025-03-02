@@ -138,7 +138,8 @@ jobs:
         id: tags
         run: |
           GIT_SHA=$(git rev-parse --short HEAD)
-          echo "tags=${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+          ENVIRONMENT="${{ github.ref_name }}"
+          echo "tags=${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:${ENVIRONMENT}-${GIT_SHA}" >> $GITHUB_OUTPUT
 
       - name: Build Image
         uses: docker/build-push-action@v6
