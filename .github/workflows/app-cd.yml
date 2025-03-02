@@ -37,7 +37,7 @@ jobs:
         id: retrieve-image-tag
         run: |
           tag=$(aws ssm get-parameter \
-            --name "/ecr/latest-image-tag" \
+            --name "/${{ github.repository }}/latest-image-tag" \
             --query 'Parameter.Value' \
             --output text)
 

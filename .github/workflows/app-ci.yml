@@ -146,24 +146,24 @@ jobs:
           tag="pr-${PR_NUMBER}-${GIT_SHA}"
           
           # Debug information
-          echo "Tag: $tag"
-          echo "tag=$tag" >> $GITHUB_OUTPUT
-          echo "tag" > image-tag.txt
+          echo "Generated Image Tag: $tag"
+          echo "image_tag=$tag" >> $GITHUB_OUTPUT
+          echo $tag > image-tag.txt
+
+          # Construct image tag
+          tags="${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:$tag"
+          echo "Generated full image tag: $tags"
+          
+          echo "tags=$tags" >> $GITHUB_OUTPUT
+          echo "$tags" > image-tag.txt
 
       - name: Upload Image Tag in AWS SSM
         run: |
           aws ssm put-parameter \
-            --name "/ecr/latest-image-tag" \
+            --name "/${{ github.repository }}/latest-image-tag" \
             --type "String" \
-            --value "$tag" \
+            --value "$tags" \
             --overwrite
-          
-          # Construct image tag
-          tags="${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:$tag"
-          echo "Generated image tag: $tags"
-          
-          echo "tags=$tags" >> $GITHUB_OUTPUT
-          echo "$tags" > image-tag.txt
 
       - name: Upload Image Tag
         uses: actions/upload-artifact@v4
