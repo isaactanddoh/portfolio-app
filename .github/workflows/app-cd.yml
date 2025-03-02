@@ -33,23 +33,16 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       
-      - name: Generate Image Tags
-        id: tags
+      - name: Download Image Tag
+        uses: actions/download-artifact@v4
+        with:
+          name: image-tag
+
+      - name: Read Image Tag
+        id: read-image-tag
         run: |
-          GIT_SHA=$(git rev-parse --short HEAD)
-          ENVIRONMENT="${{ github.ref_name }}"
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          
-          # Debug information
-          echo "Environment: $ENVIRONMENT"
-          echo "PR Number: $PR_NUMBER"
-          echo "Git SHA: $GIT_SHA"
-          
-          # Construct image tag
-          tags="${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:pr-${PR_NUMBER}-${GIT_SHA}"
-          echo "Generated image tag: $tags"
-          
-          echo "tags=$tags" >> $GITHUB_OUTPUT
+          tag=$(cat image-tag.txt)
+          echo "tag=$tag" >> $GITHUB_OUTPUT
 
       - name: Verify Image Exists
         run: |
@@ -58,9 +51,9 @@ jobs:
           
           if ! aws ecr describe-images \
             --repository-name ${{ secrets.ECR_REPO }} \
-            --image-ids imageTag=pr-${PR_NUMBER}-${GIT_SHA} >/dev/null 2>&1; then
+            --image-ids imageTag=$tag  >/dev/null 2>&1; then
             echo "Error: Required image not found in ECR"
-            echo "Image: ${{ steps.tags.outputs.tags }}"
+            echo "Image: $tag"
             exit 1
           fi
           echo "✅ Image verified in ECR"
@@ -73,13 +66,16 @@ jobs:
             --task-definition $TASK_FAMILY \
             --query 'taskDefinition' \
             --output json > taskdef.json
+            
           echo "task_family=$TASK_FAMILY" >> $GITHUB_OUTPUT
+
           # Store current task definition ARN for potential rollback
           CURRENT_TASKDEF_ARN=$(aws ecs describe-services \
             --cluster ${{ secrets.ECS_CLUSTER }} \
             --services ${{ secrets.ECS_SERVICE }} \
             --query 'services[0].taskDefinition' \
             --output text)
+
           echo "current_taskdef_arn=$CURRENT_TASKDEF_ARN" >> $GITHUB_OUTPUT
 
       - name: Render New Task Definition
@@ -89,7 +85,7 @@ jobs:
           TASKDEF_CONTENT=$(cat taskdef.json)
           
           # Update the image in container definitions
-          NEW_TASKDEF=$(echo "$TASKDEF_CONTENT" | jq --arg IMAGE "${{ steps.tags.outputs.tags }}" \
+          NEW_TASKDEF=$(echo "$TASKDEF_CONTENT" | jq --arg IMAGE "${tag}" \
             '.containerDefinitions[0].image = $IMAGE')
           
           # Remove fields that shouldn't be included in register-task-definition
