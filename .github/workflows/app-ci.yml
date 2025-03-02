@@ -153,7 +153,7 @@ jobs:
       - name: Upload Image Tag in AWS SSM
         run: |
           aws ssm put-parameter \
-            --name "/${{ github.repository }}/image-tag" \
+            --name "/ecr/latest-image-tag" \
             --type "String" \
             --value "$tag" \
             --overwrite
