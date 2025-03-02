@@ -19,7 +19,7 @@ jobs:
       run:
         working-directory: .
     environment:
-      name: ${{ github.base_ref }}
+      name: ${{ github.ref_name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +38,7 @@ jobs:
         id: tags
         run: |
           GIT_SHA=$(git rev-parse --short HEAD)
-          ENVIRONMENT="${{ github.base_ref }}"
+          ENVIRONMENT="${{ github.ref_name }}"
           PR_NUMBER="${{ github.event.pull_request.number }}"
           
           # Debug information
@@ -55,7 +55,7 @@ jobs:
       - name: Verify Image Exists
         run: |
           GIT_SHA=$(git rev-parse --short HEAD)
-          ENVIRONMENT="${{ github.base_ref }}"
+          ENVIRONMENT="${{ github.ref_name }}"
           
           if ! aws ecr describe-images \
             --repository-name ${{ secrets.ECR_REPO }} \
