@@ -60,13 +60,6 @@ jobs:
           IMAGE_TAG="${{ steps.retrieve-image-tag.outputs.tag }}"
           echo "Checking for image: $IMAGE_TAG"
           
-          # Extract the repository name and tag from the full image URL
-          # REPO_NAME=${{ secrets.ECR_REPO }}
-          # TAG_PART=$(echo "$IMAGE_TAG" | cut -d':' -f2)
-          
-          # echo "Repository: $REPO_NAME"
-          # echo "Tag: $TAG_PART"
-          
           if ! aws ecr describe-images \
             --repository-name ${{ secrets.ECR_REPO }} \
             --image-ids imageTag=$IMAGE_TAG  >/dev/null 2>&1; then
@@ -76,6 +69,13 @@ jobs:
           fi
           echo "✅ Image verified in ECR"
 
+      - name: Generate Image Tag
+        id: tags
+        run: |
+          ImageTag="${{ steps.retrieve-image-tag.outputs.tag }}"
+          echo "tags=${{steps.login-ecr.outputs.registry}}/${{ secrets.ECR_REPO }}:${ImageTag}" >> $GITHUB_OUTPUT
+          
+
       - name: Download Task Definition
         id: download-taskdef
         run: |
@@ -84,6 +84,8 @@ jobs:
             --task-definition $TASK_FAMILY \
             --query 'taskDefinition' \
             --output json > taskdef.json
+
+          echo "task_family=$TASK_FAMILY" >> $GITHUB_OUTPUT
 
           # Store current task definition ARN for potential rollback
           CURRENT_TASKDEF_ARN=$(aws ecs describe-services \
@@ -101,7 +103,7 @@ jobs:
           TASKDEF_CONTENT=$(cat taskdef.json)
           
           # Update the image in container definitions using the full image URL
-          NEW_TASKDEF=$(echo "$TASKDEF_CONTENT" | jq --arg IMAGE "${{ steps.retrieve-image-tag.outputs.tag }}" \
+          NEW_TASKDEF=$(echo "$TASKDEF_CONTENT" | jq --arg IMAGE "${{steps.tags.outputs.tags}}" \
             '.containerDefinitions[0].image = $IMAGE')
           
           # Remove fields that shouldn't be included in register-task-definition
