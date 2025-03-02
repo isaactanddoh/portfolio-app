@@ -159,17 +159,18 @@ jobs:
 
       - name: Upload Image Tag in AWS SSM
         run: |
-          # Get the full image tag
-          IMAGE_TAG="${{ steps.tags.outputs.tags }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          GIT_SHA=$(git rev-parse --short HEAD)
+          tag="pr-${PR_NUMBER}-${GIT_SHA}"
           
           # Debug output
-          echo "Storing image tag in SSM: $IMAGE_TAG"
+          echo "Storing image tag in SSM: $tag"
           
           # Store in SSM
           aws ssm put-parameter \
             --name "/${{ github.repository }}/latest-image-tag" \
             --type "String" \
-            --value "$IMAGE_TAG" \
+            --value "$tag" \
             --overwrite
 
           # Verify the parameter was set

@@ -61,11 +61,11 @@ jobs:
           echo "Checking for image: $IMAGE_TAG"
           
           # Extract the repository name and tag from the full image URL
-          REPO_NAME=${{ secrets.ECR_REPO }}
-          TAG_PART=$(echo "$IMAGE_TAG" | cut -d':' -f2)
+          # REPO_NAME=${{ secrets.ECR_REPO }}
+          # TAG_PART=$(echo "$IMAGE_TAG" | cut -d':' -f2)
           
-          echo "Repository: $REPO_NAME"
-          echo "Tag: $TAG_PART"
+          # echo "Repository: $REPO_NAME"
+          # echo "Tag: $TAG_PART"
           
           if ! aws ecr describe-images \
             --repository-name ${{ secrets.ECR_REPO }} \
