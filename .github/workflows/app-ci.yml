@@ -27,7 +27,8 @@ jobs:
         working-directory: .
     
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -61,8 +62,7 @@ jobs:
           fi
         
       - name: Run Tests with Coverage
-        run: |
-          npm run test:coverage
+        run: npm run test:coverage
         
       - name: Run SAST with SonarCloud
         uses: SonarSource/sonarqube-scan-action@v4
@@ -125,7 +125,8 @@ jobs:
     environment:
       name: ${{ github.base_ref }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -140,18 +141,25 @@ jobs:
       - name: Generate Image Tags
         id: tags
         run: |
-          # Get PR target branch (dev, staging, or main)
-          ENVIRONMENT="${{ github.base_ref }}"
           PR_NUMBER="${{ github.event.pull_request.number }}"
           GIT_SHA=$(git rev-parse --short HEAD)
+          tag="pr-${PR_NUMBER}-${GIT_SHA}"
           
           # Debug information
-          echo "Environment: $ENVIRONMENT"
-          echo "PR Number: $PR_NUMBER"
-          echo "Git SHA: $GIT_SHA"
+          echo "Tag: $tag"
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+          echo "tag" > image-tag.txt
+
+      - name: Upload Image Tag in AWS SSM
+        run: |
+          aws ssm put-parameter \
+            --name "/${{ github.repository }}/image-tag" \
+            --type "String" \
+            --value "$tag" \
+            --overwrite
           
           # Construct image tag
-          tags="${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:pr-${PR_NUMBER}-${GIT_SHA}"
+          tags="${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:$tag"
           echo "Generated image tag: $tags"
           
           echo "tags=$tags" >> $GITHUB_OUTPUT

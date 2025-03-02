@@ -33,21 +33,20 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       
-      - name: Download Image Tag
-        uses: actions/download-artifact@v4
-        with:
-          name: image-tag
-
-      - name: Read Image Tag
-        id: read-image-tag
+      - name: Retrieve Image Tag from SSM
+        id: retrieve-image-tag
         run: |
-          tag=$(cat image-tag.txt)
+          tag=$(aws ssm get-parameter \
+            --name "/${{ github.repository }}/image-tag" \
+            --query 'Parameter.Value' \
+            --output text)
+
           echo "tag=$tag" >> $GITHUB_OUTPUT
+          echo "Using Image Tag: $tag"
 
       - name: Verify Image Exists
         run: |
           GIT_SHA=$(git rev-parse --short HEAD)
-          ENVIRONMENT="${{ github.ref_name }}"
           
           if ! aws ecr describe-images \
             --repository-name ${{ secrets.ECR_REPO }} \
@@ -66,8 +65,8 @@ jobs:
             --task-definition $TASK_FAMILY \
             --query 'taskDefinition' \
             --output json > taskdef.json
-            
-          echo "task_family=$TASK_FAMILY" >> $GITHUB_OUTPUT
+
+          # echo "task_family=$TASK_FAMILY" >> $GITHUB_OUTPUT
 
           # Store current task definition ARN for potential rollback
           CURRENT_TASKDEF_ARN=$(aws ecs describe-services \
