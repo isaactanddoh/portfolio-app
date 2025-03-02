@@ -19,7 +19,7 @@ jobs:
       run:
         working-directory: .
     environment:
-      name: ${{ github.ref_name }}
+      name: ${{ github.base_ref }}
 
     steps:
       - uses: actions/checkout@v4
@@ -38,26 +38,28 @@ jobs:
         id: tags
         run: |
           GIT_SHA=$(git rev-parse --short HEAD)
-          ENVIRONMENT="${{ github.ref_name }}"
+          ENVIRONMENT="${{ github.base_ref }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
           
           # Debug information
           echo "Environment: $ENVIRONMENT"
+          echo "PR Number: $PR_NUMBER"
           echo "Git SHA: $GIT_SHA"
           
           # Construct image tag
-          IMAGE_TAG="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${ENVIRONMENT}-${GIT_SHA}"
-          echo "Generated image tag: $IMAGE_TAG"
+          tags="${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:pr-${PR_NUMBER}-${GIT_SHA}"
+          echo "Generated image tag: $tags"
           
-          echo "tags=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "tags=$tags" >> $GITHUB_OUTPUT
 
       - name: Verify Image Exists
         run: |
           GIT_SHA=$(git rev-parse --short HEAD)
-          ENVIRONMENT="${{ github.ref_name }}"
+          ENVIRONMENT="${{ github.base_ref }}"
           
           if ! aws ecr describe-images \
-            --repository-name ${{ env.ECR_REPOSITORY }} \
-            --image-ids imageTag=${ENVIRONMENT}-${GIT_SHA} >/dev/null 2>&1; then
+            --repository-name ${{ secrets.ECR_REPO }} \
+            --image-ids imageTag=pr-${PR_NUMBER}-${GIT_SHA} >/dev/null 2>&1; then
             echo "Error: Required image not found in ECR"
             echo "Image: ${{ steps.tags.outputs.tags }}"
             exit 1
