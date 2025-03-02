@@ -12,10 +12,6 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
-  AWS_REGION: eu-west-1
-
 jobs:
   deploy:
     runs-on: ubuntu-latest

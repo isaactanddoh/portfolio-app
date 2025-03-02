@@ -18,13 +18,11 @@ permissions:
   pull-requests: write
   checks: write
 
-env:
-  ECR_REPOSITORY: ${{ secrets.ECR_REPO }}
-  AWS_REGION: eu-west-1
-
 jobs:
   security-checks:
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.base_ref }}
     defaults:
       run:
         working-directory: .
@@ -125,6 +123,8 @@ jobs:
   build-and-test-image:
     needs: security-checks
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.base_ref }}
     steps:
       - uses: actions/checkout@v4
 
@@ -152,7 +152,7 @@ jobs:
           echo "Git SHA: $GIT_SHA"
           
           # Construct image tag
-          tags="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:pr-${PR_NUMBER}-${GIT_SHA}"
+          tags="${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:pr-${PR_NUMBER}-${GIT_SHA}"
           echo "Generated image tag: $tags"
           
           echo "tags=$tags" >> $GITHUB_OUTPUT
